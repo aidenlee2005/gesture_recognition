@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class GestureGRU(nn.Module):
-    def __init__(self, input_dim=126, hidden_dim=256, num_layers=2, num_classes=20, dropout=0.3):
+    def __init__(self, input_dim=225, hidden_dim=256, num_layers=2, num_classes=10, dropout=0.3):
         super(GestureGRU, self).__init__()
         self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True, dropout=dropout)
         self.bn = nn.LayerNorm(hidden_dim)

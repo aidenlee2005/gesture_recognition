@@ -17,22 +17,39 @@ with open('classes.json', 'r') as f:
 
 # 初始化 MediaPipe
 mp_hands = mp.solutions.hands
+mp_pose = mp.solutions.pose
 hands_detector = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5)
+pose_detector = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
-def extract_hand_landmarks(image):
+def extract_full_landmarks(image):
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = hands_detector.process(image_rgb)
-    keypoints = np.zeros(126)
-    landmarks_list = []
-    if results.multi_hand_landmarks:
-        for i, landmarks in enumerate(results.multi_hand_landmarks[:2]):
-            offset = i * 63
-            for lm in landmarks.landmark:
-                keypoints[offset:offset+3] = [lm.x, lm.y, lm.z]
-                offset += 3
-            landmarks_list.append(landmarks)
-    return keypoints, landmarks_list
+    
+    # 处理姿势
+    pose_results = pose_detector.process(image_rgb)
+    pose_keypoints = []
+    if pose_results.pose_landmarks:
+        for lm in pose_results.pose_landmarks.landmark:
+            pose_keypoints.extend([lm.x, lm.y, lm.z])
+    else:
+        pose_keypoints = [0] * (33 * 3)  # 33点 * 3坐标
+    
+    # 处理双手
+    hand_results = hands_detector.process(image_rgb)
+    hand_keypoints = []
+    if hand_results.multi_hand_landmarks:
+        for hand_landmarks in hand_results.multi_hand_landmarks[:2]:  # 最多两只手
+            for lm in hand_landmarks.landmark:
+                hand_keypoints.extend([lm.x, lm.y, lm.z])
+        # 如果少于两只手，填充零
+        while len(hand_keypoints) < 42 * 3:
+            hand_keypoints.extend([0, 0, 0])
+    else:
+        hand_keypoints = [0] * (42 * 3)  # 42点（21*2手）* 3坐标
+    
+    # 拼接所有关键点
+    all_keypoints = pose_keypoints + hand_keypoints
+    return np.array(all_keypoints), pose_results, hand_results
 
 def inference():
     cap = cv2.VideoCapture(1)
@@ -44,9 +61,14 @@ def inference():
         if not ret:
             break
 
-        keypoints, landmarks_list = extract_hand_landmarks(frame)
-        for landmarks in landmarks_list:
-            mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS)
+        keypoints, pose_results, hand_results = extract_full_landmarks(frame)
+        # 绘制姿势
+        if pose_results.pose_landmarks:
+            mp_drawing.draw_landmarks(frame, pose_results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        # 绘制双手
+        if hand_results.multi_hand_landmarks:
+            for hand_landmarks in hand_results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
         sequence.append(keypoints)
 
         if len(sequence) > seq_len:
