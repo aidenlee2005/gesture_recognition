@@ -7,8 +7,8 @@ from model import GestureGRU
 import numpy as np
 
 def train_model():
-    # 加载数据
-    dataset = HandGestureDataset('hand_gesture_data.npz')
+    # 加载增强后的数据
+    dataset = HandGestureDataset('hand_gesture_data_augmented.npz')
     train_size = int(0.7 * len(dataset))
     val_size = int(0.15 * len(dataset))
     test_size = len(dataset) - train_size - val_size
@@ -23,7 +23,7 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     # 训练
-    num_epochs = 25
+    num_epochs = 40  # 增加epoch数以适应更大的数据集
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0

@@ -32,7 +32,7 @@ def extract_hand_landmarks(image):
     return None, None
 
 def inference():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     sequence = []
     seq_len = 30
 

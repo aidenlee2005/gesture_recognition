@@ -13,8 +13,9 @@ mp_drawing = mp.solutions.drawing_utils
 GESTURES = {
     0: "OK",
     1: "Thumbs Up",
-    2: "Peace",
-    3: "Fist"
+    2: "Yeah",
+    3: "Fist",
+    4: "Palm",
 }
 
 def extract_hand_landmarks(image):
@@ -32,7 +33,7 @@ def extract_hand_landmarks(image):
 
 def collect_data():
     """采集数据"""
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     if not cap.isOpened():
         print("无法打开摄像头")
         return
@@ -50,29 +51,18 @@ def collect_data():
     current_gesture = None
     sequence = []
 
-    print("按键选择手势：0=OK, 1=Thumbs Up, 2=Peace, 3=Fist, q=退出")
-    print("按 's' 开始录制一段序列")
+    print("输入手势编号选择手势：0=OK, 1=Thumbs Up, 2=Peace, 3=Fist, q=退出")
+    print("输入 's' 开始录制一段序列")
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        command = input("请输入命令: ").strip().lower()
+        
+        if command == 'q':
             break
-
-        # 提取关键点
-        keypoints, landmarks = extract_hand_landmarks(frame)
-        if keypoints is not None:
-            # 绘制关键点
-            mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS)
-
-        cv2.imshow('Hand Gesture Collection', frame)
-        key = cv2.waitKey(100) & 0xFF
-
-        if key == ord('q'):
-            break
-        elif key in [ord('0'), ord('1'), ord('2'), ord('3')]:
-            current_gesture = int(chr(key))
+        elif command in ['0', '1', '2', '3']:
+            current_gesture = int(command)
             print(f"选择手势: {GESTURES[current_gesture]}")
-        elif key == ord('s') and current_gesture is not None:
+        elif command == 's' and current_gesture is not None:
             if not cap.isOpened():
                 print("摄像头未打开，无法录制")
                 continue
@@ -86,12 +76,8 @@ def collect_data():
                 keypoints, landmarks = extract_hand_landmarks(frame)
                 if keypoints is not None:
                     sequence.append(keypoints)
-                    # 绘制关键点
-                    mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS)
                 else:
                     sequence.append(np.zeros(63))  # 补零
-                cv2.imshow('Hand Gesture Collection', frame)
-                cv2.waitKey(100)
                 print(f"帧 {i+1}/{seq_len} 录制中...")
             if len(sequence) == seq_len:
                 data.append(sequence)
@@ -99,9 +85,10 @@ def collect_data():
                 print(f"录制完成，手势: {GESTURES[current_gesture]}，总样本: {len(data)}")
             else:
                 print(f"录制失败，只录制了 {len(sequence)} 帧")
+        else:
+            print("无效命令，请输入 0-3 选择手势，或 's' 录制，或 'q' 退出")
 
     cap.release()
-    cv2.destroyAllWindows()
 
     # 保存数据
     if data:
