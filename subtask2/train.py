@@ -7,7 +7,7 @@ from model import GestureGRU
 import numpy as np
 
 def train_model():
-    # 加载增强后的数据
+    # 加载增强后的数据（现在包含标准化）
     dataset = HandGestureDataset('hand_gesture_data_augmented.npz')
     train_size = int(0.7 * len(dataset))
     val_size = int(0.15 * len(dataset))
@@ -20,10 +20,16 @@ def train_model():
     # 模型
     model = GestureGRU()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)  # 添加L2正则化
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+
+    # 早停
+    best_val_acc = 0
+    patience = 10
+    patience_counter = 0
 
     # 训练
-    num_epochs = 40  # 增加epoch数以适应更大的数据集
+    num_epochs = 100  # 增加epoch数
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0
@@ -49,11 +55,28 @@ def train_model():
                 total += y.size(0)
                 correct += (predicted == y).sum().item()
 
-        print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader):.4f}, Val Loss: {val_loss/len(val_loader):.4f}, Val Acc: {100*correct/total:.2f}%')
+        val_acc = 100 * correct / total
+        print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader):.4f}, Val Loss: {val_loss/len(val_loader):.4f}, Val Acc: {val_acc:.2f}%')
 
-    # 保存模型
+        # 学习率调度
+        scheduler.step(val_acc)
+
+        # 早停
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            torch.save(model.state_dict(), 'gesture_gru_best.pth')
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+
+    # 加载最佳模型
+    model.load_state_dict(torch.load('gesture_gru_best.pth'))
+    # 保存最终模型
     torch.save(model.state_dict(), 'gesture_gru.pth')
-    print("模型保存完成")
+    print("最佳模型保存完成")
 
 if __name__ == "__main__":
     train_model()

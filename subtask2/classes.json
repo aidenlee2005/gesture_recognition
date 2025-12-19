@@ -1,1 +1,12 @@
-{"0": "Hello", "1": "Thank you", "2": "Sorry", "3": "Please", "4": "Goodbye", "5": "I", "6": "Love", "7": "Help", "8": "Eat", "9": "Drink"}
+{
+  "0": "Hello",
+  "1": "Thank you",
+  "2": "Sorry",
+  "3": "You",
+  "4": "Goodbye",
+  "5": "I",
+  "6": "Love",
+  "7": "Help",
+  "8": "Eat",
+  "9": "Drink"
+}

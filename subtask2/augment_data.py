@@ -2,6 +2,37 @@ import numpy as np
 import random
 from scipy.spatial.transform import Rotation
 
+def apply_temporal_augmentation(sequence, speed_factor_range=(0.8, 1.2), noise_factor=0.05):
+    """
+    对时间序列应用时间增强
+    sequence: (seq_len, features)
+    """
+    seq_len, features = sequence.shape
+    
+    # 速度扰动
+    speed_factor = np.random.uniform(speed_factor_range[0], speed_factor_range[1])
+    new_seq_len = int(seq_len * speed_factor)
+    
+    if new_seq_len < seq_len:
+        # 加速：插值
+        indices = np.linspace(0, seq_len-1, new_seq_len)
+        augmented = np.zeros((seq_len, features))
+        for i in range(features):
+            augmented[:, i] = np.interp(np.arange(seq_len), indices, sequence[:new_seq_len, i])
+    else:
+        # 减速：重复帧
+        indices = np.linspace(0, seq_len-1, new_seq_len)
+        temp_sequence = np.zeros((new_seq_len, features))
+        for i in range(features):
+            temp_sequence[:, i] = np.interp(np.arange(new_seq_len), np.arange(seq_len), sequence[:, i])
+        augmented = temp_sequence[:seq_len]  # 截断到原长度
+    
+    # 添加时间噪声
+    noise = np.random.normal(0, noise_factor, augmented.shape)
+    augmented += noise
+    
+    return augmented
+
 def apply_random_transform_full(keypoints, rotation_range=30, scale_range=(0.8, 1.2), translate_range=(-0.1, 0.1), noise_std=0.01):
     """
     对完整关键点（身体+双手）应用随机变换
@@ -58,14 +89,23 @@ def apply_random_transform_full(keypoints, rotation_range=30, scale_range=(0.8, 
         translate_x = np.random.uniform(translate_range[0], translate_range[1])
         translate_y = np.random.uniform(translate_range[0], translate_range[1])
         translate_z = np.random.uniform(translate_range[0], translate_range[1])
-        transformed[:, 0] += translate_x
-        transformed[:, 1] += translate_y
-        transformed[:, 2] += translate_z
+        body_keypoints[:, 0] += translate_x
+        body_keypoints[:, 1] += translate_y
+        body_keypoints[:, 2] += translate_z
+        hand_keypoints[:, 0] += translate_x
+        hand_keypoints[:, 1] += translate_y
+        hand_keypoints[:, 2] += translate_z
     
     # 4. 添加小噪声
     if noise_std > 0:
-        noise = np.random.normal(0, noise_std, transformed.shape)
-        transformed += noise
+        body_noise = np.random.normal(0, noise_std, body_keypoints.shape)
+        hand_noise = np.random.normal(0, noise_std, hand_keypoints.shape)
+        body_keypoints += body_noise
+        hand_keypoints += hand_noise
+    
+    # 重新组合
+    transformed[:33] = body_keypoints
+    transformed[33:] = hand_keypoints
     
     return transformed
 
@@ -92,56 +132,28 @@ def augment_dataset(X, y, augment_factor=4):
         label = y[i]
 
         for aug_idx in range(augment_factor):
-            augmented_sample = []
-
-            # 生成变换参数
-            rot_x = np.random.uniform(-20, 20)
-            rot_y = np.random.uniform(-20, 20)
-            rot_z = np.random.uniform(-20, 20)
-            scale = np.random.uniform(0.9, 1.1)
-            translate_x = np.random.uniform(-0.05, 0.05)
-            translate_y = np.random.uniform(-0.05, 0.05)
-            translate_z = np.random.uniform(-0.05, 0.05)
-            noise_std = np.random.uniform(0, 0.005)
+            # 随机选择增强类型
+            aug_type = np.random.choice(['spatial', 'temporal', 'both'])
             
-            # 时间增强参数
-            time_warp = np.random.choice([True, False], p=[0.3, 0.7])  # 30%概率时间扭曲
-            frame_drop = np.random.choice([True, False], p=[0.2, 0.8])  # 20%概率随机丢帧
-
-            for frame_idx in range(seq_len):
-                frame_keypoints = sample[frame_idx].reshape(75, 3)  # 33+42=75点
-
-                # 应用空间变换
-                transformed_frame = apply_random_transform_full(
-                    frame_keypoints,
-                    rotation_range=20,
-                    scale_range=(0.9, 1.1),
-                    translate_range=(-0.05, 0.05),
-                    noise_std=noise_std
-                )
-                
-                augmented_sample.append(transformed_frame.flatten())
-
-            # 时间增强
-            augmented_seq = np.array(augmented_sample)  # (seq_len, 225)
+            if aug_type in ['spatial', 'both']:
+                # 空间增强
+                augmented_seq = []
+                for frame in sample:
+                    transformed_frame = apply_random_transform_full(frame.reshape(-1, 3), 
+                                                                   rotation_range=20, 
+                                                                   scale_range=(0.9, 1.1), 
+                                                                   translate_range=(-0.05, 0.05), 
+                                                                   noise_std=np.random.uniform(0, 0.005))
+                    augmented_seq.append(transformed_frame.flatten())
+                augmented_seq = np.array(augmented_seq)
+            else:
+                augmented_seq = sample.copy()
             
-            if time_warp:
-                # 简单时间扭曲：随机重采样
-                indices = np.linspace(0, seq_len-1, seq_len)
-                warp_factor = np.random.uniform(0.8, 1.2)
-                warped_indices = indices * warp_factor
-                warped_indices = np.clip(warped_indices, 0, seq_len-1).astype(int)
-                augmented_seq = augmented_seq[warped_indices]
-            
-            if frame_drop and seq_len > 20:  # 确保不丢太多帧
-                # 随机丢弃10%的帧
-                drop_indices = np.random.choice(seq_len, size=int(seq_len * 0.1), replace=False)
-                keep_indices = np.setdiff1d(np.arange(seq_len), drop_indices)
-                augmented_seq = augmented_seq[keep_indices]
-                # 插值回原长度（简单重复）
-                if len(augmented_seq) < seq_len:
-                    diff = seq_len - len(augmented_seq)
-                    augmented_seq = np.concatenate([augmented_seq, augmented_seq[-diff:]])
+            if aug_type in ['temporal', 'both']:
+                # 时间增强
+                augmented_seq = apply_temporal_augmentation(augmented_seq, 
+                                                          speed_factor_range=(0.8, 1.2), 
+                                                          noise_factor=0.02)
             
             augmented_X.append(augmented_seq)
             augmented_y.append(label)
