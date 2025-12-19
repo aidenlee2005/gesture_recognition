@@ -94,17 +94,29 @@ def adaptive_inference():
         # 绘制检测结果
         draw_detection_results(frame, pose_results, hand_results)
 
+        # 检查是否有手势被检测到
+        has_hands = hand_results.multi_hand_landmarks is not None and len(hand_results.multi_hand_landmarks) > 0
+        has_pose = pose_results.pose_landmarks is not None
+
         sequence.append(keypoints)
 
         if len(sequence) > seq_len:
             sequence.pop(0)
 
         if len(sequence) == seq_len:
-            # 质量检查
+            # 改进的质量检查：不仅检查非零比例，还要检查是否有手势
             sequence_array = np.array(sequence)
             non_zero_ratio = np.mean(sequence_array != 0)
 
-            if non_zero_ratio > adaptive_params['quality_threshold']:
+            # 检查最近几帧是否有手势检测
+            recent_frames = sequence[-5:] if len(sequence) >= 5 else sequence
+            hand_detection_ratio = sum(1 for frame_keypoints in recent_frames
+                                     if np.mean(frame_keypoints[99:]) != 0) / len(recent_frames)  # 检查手部关键点
+
+            # 只有当有足够的手势检测时才进行预测
+            gesture_detected = hand_detection_ratio > 0.3  # 至少30%的最近帧检测到手势
+
+            if non_zero_ratio > adaptive_params['quality_threshold'] and gesture_detected:
                 # 标准化和预测
                 seq_reshaped = sequence_array.reshape(-1, sequence_array.shape[-1])
                 seq_normalized = scaler.transform(seq_reshaped)
@@ -136,8 +148,15 @@ def adaptive_inference():
                     cv2.putText(frame, f'Error: {str(e)[:30]}', (10, 30),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
-                cv2.putText(frame, f'Low Quality: {non_zero_ratio:.2f}',
-                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                # 没有检测到手势或质量不足
+                cv2.putText(frame, 'No Gesture Detected', (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (128, 128, 128), 2)
+                if not gesture_detected:
+                    cv2.putText(frame, 'No hands detected', (10, 70),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (128, 128, 128), 2)
+                elif non_zero_ratio <= adaptive_params['quality_threshold']:
+                    cv2.putText(frame, f'Low Quality: {non_zero_ratio:.2f}',
+                               (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (128, 128, 128), 2)
 
         cv2.imshow('Adaptive Gesture Recognition', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -252,24 +271,39 @@ def display_results(frame, predictions, confidences, GESTURES, params):
     if len(predictions) >= 3:
         most_common = Counter(predictions).most_common(1)[0][0]
         avg_confidence = np.mean(confidences[-len(predictions):])
-        gesture = GESTURES[most_common]
 
-        # 根据置信度选择颜色
-        if avg_confidence > 0.8:
-            color = (0, 255, 0)  # 绿色 - 高置信度
-        elif avg_confidence > 0.6:
-            color = (0, 255, 255)  # 黄色 - 中等置信度
+        # 只有当置信度足够高时才显示具体手势
+        if avg_confidence > params['confidence_threshold']:
+            gesture = GESTURES[most_common]
+
+            # 根据置信度选择颜色
+            if avg_confidence > 0.8:
+                color = (0, 255, 0)  # 绿色 - 高置信度
+            elif avg_confidence > 0.6:
+                color = (0, 255, 255)  # 黄色 - 中等置信度
+            else:
+                color = (0, 165, 255)  # 橙色 - 低置信度
+
+            cv2.putText(frame, f'Gesture: {gesture}', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            cv2.putText(frame, f'Confidence: {avg_confidence:.2f}', (10, 70),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         else:
-            color = (0, 165, 255)  # 橙色 - 低置信度
-
-        cv2.putText(frame, f'Gesture: {gesture}', (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-        cv2.putText(frame, f'Confidence: {avg_confidence:.2f}', (10, 70),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+            # 置信度不足，显示无手势
+            cv2.putText(frame, 'No Gesture Detected', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (128, 128, 128), 2)
+            cv2.putText(frame, f'Low Confidence: {avg_confidence:.2f}', (10, 70),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (128, 128, 128), 2)
     elif len(predictions) > 0:
-        gesture = GESTURES[predictions[-1]]
-        cv2.putText(frame, f'Detecting: {gesture}', (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        # 检查最新预测的置信度
+        latest_confidence = confidences[-1] if confidences else 0
+        if latest_confidence > params['confidence_threshold']:
+            gesture = GESTURES[predictions[-1]]
+            cv2.putText(frame, f'Detecting: {gesture}', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        else:
+            cv2.putText(frame, 'Analyzing...', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     else:
         cv2.putText(frame, 'Analyzing...', (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
