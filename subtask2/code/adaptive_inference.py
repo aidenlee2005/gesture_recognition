@@ -4,6 +4,7 @@ import cv2
 import torch
 import numpy as np
 import json
+import os
 from collections import Counter
 from model import GestureGRU
 from sklearn.preprocessing import StandardScaler
@@ -24,8 +25,9 @@ def adaptive_inference():
 
     # 加载模型
     try:
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gesture_gru_cv.pth')
         model = GestureGRU()
-        model.load_state_dict(torch.load('gesture_gru_cv.pth'))
+        model.load_state_dict(torch.load(model_path))
         model.eval()
         print("✅ 模型加载成功")
     except Exception as e:
@@ -34,7 +36,8 @@ def adaptive_inference():
 
     # 加载标准化器
     try:
-        train_data = np.load('hand_gesture_data.npz')
+        data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'hand_gesture_data.npz')
+        train_data = np.load(data_path)
         X_train = train_data['X']
         original_shape = X_train.shape
         X_reshaped = X_train.reshape(-1, original_shape[-1])
@@ -47,7 +50,8 @@ def adaptive_inference():
 
     # 加载类别
     try:
-        with open('classes.json', 'r') as f:
+        classes_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'classes.json')
+        with open(classes_path, 'r') as f:
             GESTURES = json.load(f)
             GESTURES = {int(k): v for k, v in GESTURES.items()}
         print("✅ 类别加载成功")

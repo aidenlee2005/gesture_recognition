@@ -6,6 +6,9 @@ hand_gesture_data_augmented.npz
 # 模型文件（可选忽略，如果不想版本控制）
 # *.pth
 
+# pre文件
+pre/
+
 # Python缓存
 __pycache__/
 *.pyc
